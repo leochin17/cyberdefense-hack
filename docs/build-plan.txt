@@ -1,0 +1,235 @@
+SOURCEGATE — SUPPLY-CHAIN ARTIFACT GATEWAY
+Build specification • 9 October 2026
+
+STATUS
+
+Research and implementation specification only. No application code, running
+endpoint, validated sponsor integration, or test suite exists yet. This public
+repository records the design and the work required to deliver the prototype.
+
+PRODUCT
+
+SourceGate gives engineers an npm-compatible installation endpoint backed by
+continuous release research and explicit security decisions. It watches a
+curated package list, compares releases with prior observations, scans exact
+artifact bytes, and serves only artifacts approved under the current policy.
+
+The hackathon MVP supports npm packages containing JavaScript/TypeScript.
+It starts with a small, explicit watchlist and dependency closure. PyPI, Maven,
+OCI images, enterprise SSO, and executing suspected malware are out of scope.
+Do not describe a passed scan as proof that a package is safe. Show which
+checks passed, their coverage, their timestamps, and remaining uncertainty.
+
+The supplied event page lists threat discovery, attack intelligence,
+autonomous remediation, and continuous defense as focus areas. The requested
+three-sponsor minimum comes from the user's brief; prize eligibility still
+needs to be checked against the organizers' actual judging requirements.
+The reference product's behavior has not been independently verified.
+
+ENGINEER EXPERIENCE
+
+1. Select a package and exact version, or import a lockfile for assessment.
+2. See the package's status: pending, scanning, approved, quarantined, error,
+   or revoked. Every decision links to evidence and the policy revision.
+3. Configure the team's npm client to use the gateway's registry URL.
+4. Install approved versions through ordinary npm workflows. An exact blocked
+   version fails with an actionable explanation; it is never silently replaced.
+5. Review alternative approved versions and update the lockfile explicitly.
+
+Existing lockfiles can contain upstream tarball URLs and bypass a changed
+registry setting. The demo must regenerate its lockfile through SourceGate
+and inspect all resolved URLs. Git, URL, local-file dependencies, and registries
+outside the gateway are unsupported bypasses in this MVP and must be surfaced.
+Enforcing exclusive use across an organization requires CI and network policy.
+
+SPONSOR INTEGRATIONS
+
+Semgrep — mandatory scanning engine.
+Run pinned, version-controlled rules over safely extracted package contents.
+Flag suspicious install-time shell execution, dynamic code execution,
+credential/environment access combined with outbound communication, and
+relevant known dangerous patterns. Preserve rule IDs, locations, severities,
+scanner version, scan errors, skipped files, and rule-bundle hash. Custom
+rules need positive and negative fixtures. Semgrep Guardian can additionally
+review the project's own generated code; Guardian and the package scanning
+worker are separate integrations. Using CE alone may not satisfy a
+Guardian-specific prize requirement.
+Evidence for the demo: a real Semgrep report with a matching quarantine event.
+
+ClickHouse — investigation and audit analytics.
+Write release observations, scan results, policy decisions, research runs,
+download decisions, and revocations as append-only events. Query the timeline
+and dashboard aggregates through the server. Use a local durable outbox for
+retryable delivery. Deduplicate events by ID when reading aggregates, since
+retries can produce duplicates. Keep the authoritative current allow/deny
+state in a transactional database; analytics delay must not permit downloads.
+Evidence for the demo: real stored events and a query driving the dashboard.
+
+Guild — recurring research agents.
+Use the documented agent SDK and schedule triggers to research watched
+releases and relevant advisories. Give the researcher read-only evidence
+tools and a narrow ability to submit structured research reports. Reports
+contain source URLs, timestamps, package/version scope, confidence, and
+specific reasons. Treat package README text and external articles as untrusted
+data. An agent recommendation cannot directly approve an artifact or override
+the deterministic download policy. Account access and a live scheduled run
+are required before claiming this sponsor integration is operational.
+Evidence for the demo: a Guild run producing a report that affects a decision.
+
+Akash — planned fourth sponsor and deployment target.
+Package the gateway and worker as containers; provide an SDL deployment with
+persistent artifact/state storage, appropriate resources, and a gateway port.
+Keep scanner and database services private. Provide TLS for the install URL,
+server-side secrets, and authenticated administrative endpoints. Pin release
+images by digest and preserve storage across restarts. An SDL file alone is
+not a live Akash integration; record a successful deployment and install from
+its endpoint before claiming it. Actual deployment depends on an account,
+funding, and an agreed spending limit.
+
+Senso — optional extension after the core three work.
+Index vetted incident reports and retrieve cited passages for investigations.
+Keep source identity, retrieval timestamps, and evidence scope. Do not add it
+only to increase the sponsor count; it must support a demonstrated workflow.
+
+ARCHITECTURE
+
+Registry gateway: a Python HTTP service implementing the npm metadata and
+tarball paths used in the supported demo. Metadata exposes only eligible
+versions and dist-tags. Rewritten tarball URLs always point back to the
+gateway. Preserve upstream integrity/signature fields for unchanged bytes.
+
+Artifact worker: retrieve metadata from an explicit upstream registry
+allowlist; validate package identity; fetch an allowed tarball URL; verify
+integrity and signatures; extract into an isolated temporary directory;
+compare with a recorded baseline; run Semgrep; consult advisory evidence;
+then request a deterministic policy decision.
+
+Research layer: Guild performs recurring investigation, with an initial
+target interval of 15 minutes subject to provider scheduling support and
+account limits. A local deterministic watchlist worker supports offline
+development, but must be labeled as a local fallback rather than a Guild run.
+
+Transactional store: SQLite for the single-instance demo, holding packages,
+versions, immutable artifact identities, current decisions, jobs, revocations,
+and an event outbox. PostgreSQL is a later scaling choice. Job claiming and
+approval writes must be atomic; duplicate jobs should be idempotent.
+
+Artifact store: immutable bytes addressed by a cryptographic digest on a
+persistent volume for the MVP. A decision refers to an exact digest, not just
+a package name and version. Publish bytes atomically only after verification.
+
+Dashboard: package search, watchlist controls, scan progress, release diffs,
+findings, evidence sources, research history, revocations, and registry setup.
+Display disconnected integrations and demo fixtures honestly. Authenticate
+all administrative operations; a public source repository does not imply
+public administrative access.
+
+Serving policy: every metadata and tarball request checks current state.
+Quarantined, revoked, incomplete, stale, unsupported, and errored assessments
+are ineligible. Missing scanners or required evidence must never become a
+clean result. Revocation applies even to artifacts already cached locally.
+It cannot remove copies previously downloaded onto engineers' computers.
+
+TRUST AND DETECTION
+
+Record upstream URL, package name/version, digest, observation time, relevant
+publisher/repository information, registry signature result, provenance status
+when available, baseline comparison, and advisory IDs. Establish a baseline
+explicitly; a first observation has no historical change evidence.
+
+Registry signatures detect some tampering with package content in transit
+or at a mirror. They do not prove a publisher's release is benign. An attacker
+using a compromised legitimate publisher can distribute correctly signed
+malicious content. Upstream-provided checksums likewise do not independently
+prove legitimacy. Provenance verification must validate claims, not just
+check that a provenance field exists; absent and failed verification differ.
+
+Reject archive path traversal, links, devices, oversized members, excessive
+file counts, and decompression bombs. Apply CPU, memory, wall-clock, and
+output limits to scanning. Never run lifecycle scripts or install downloaded
+packages on the analyst host. Restrict egress and reject unexpected redirects
+so an upstream URL cannot become an SSRF path into internal services.
+
+Document scan coverage. Unsupported binaries, parse failures, ignored files,
+or analysis timeouts require a review or denial outcome under the demo policy.
+Advisory and agent evidence are supplemental signals, not a complete malware
+detector. Differentiate vulnerabilities from confirmed malicious releases.
+
+REVOCATION AND CONTINUOUS OPERATION
+
+Poll watched releases and refresh advisory evidence with bounded retries,
+backoff, last-success timestamps, and explicit freshness limits. Reassess
+cached versions when intelligence or the rule/policy revision changes.
+Maintain a durable queue across restarts. Rate-limit user-triggered research
+and downloads. Quarantine the exact affected artifact and preserve the
+previous report for audit. Do not silently downgrade a requested dependency.
+
+DEMONSTRATION AND ACCEPTANCE CRITERIA
+
+1. A small legitimate dependency tree passes the real checks and installs
+   through the gateway in a clean temporary npm project. Verify all resolved
+   tarball URLs route through the gateway and artifact digests match.
+2. A clearly labeled inert suspicious fixture generates a real Semgrep
+   finding. It is never executed. The exact version cannot be downloaded.
+3. A changed-byte fixture fails integrity validation before approval.
+4. A scanner crash, timeout, missing executable, or incomplete scan causes a
+   denial/error state, never approval.
+5. A revoked cached version is blocked by both metadata and direct tarball
+   routes, including concurrent-request and restart cases.
+6. Scoped names, exact versions, dist-tags, transitive packages, and a blocked
+   transitive dependency behave correctly for the documented npm workflow.
+7. Archive traversal, symlink, oversized input, redirect, and private-network
+   fetch tests fail safely without writing outside the extraction directory.
+8. A real ClickHouse query displays scan, decision, and download events.
+9. A real Guild run contributes a cited report; repeated scheduling and
+   provider failures are visible. If unavailable, label the integration
+   unverified and do not count it as one of three working sponsors.
+10. The GitHub repository contains setup instructions, a threat model, tests,
+    pinned dependencies, container/deployment assets, license, sample
+    configuration without secrets, sponsor evidence, and a short demo guide.
+
+BUILD ORDER
+
+A. Complete the required architecture and security review of this design.
+   Incorporate its findings before implementation.
+B. Implement the artifact pipeline, transactional policy state, and negative
+   security tests first.
+C. Implement the npm gateway and prove real install and denial behavior.
+D. Connect ClickHouse and Guild, then build the dashboard from real events.
+E. Package for local startup and Akash; validate the supported deployment.
+F. Inspect staged files for secrets/runtime data and publish the tested
+   implementation, setup instructions, and measured results to this repo.
+
+No repository, endpoint URL, completed integration, or test result should be
+reported until it is actually created and verified.
+
+RESEARCH SOURCES
+
+Event focus areas:
+https://partiful.com/e/Np4oGraOAdod2mjcSfyN
+
+Semgrep Guardian setup and local rules:
+https://docs.semgrep.dev/semgrep-guardian/quickstart
+https://docs.semgrep.dev/running-rules
+
+ClickHouse HTTP interface:
+https://clickhouse.com/docs/concepts/features/interfaces/http
+
+Guild agents and documented scheduling capabilities:
+https://docs.guild.ai/
+https://docs.guild.ai/quickstart
+https://docs.guild.ai/llms.txt
+
+Akash deployment syntax and persistent storage:
+https://akash.network/docs/developers/deployment/akash-sdl/syntax-reference/
+https://akash.network/docs/developers/deployment/akash-sdl/advanced-features/
+
+Senso knowledge ingestion and cited retrieval:
+https://docs.senso.ai/docs/quickstart
+
+npm registry signatures and vulnerability audit:
+https://docs.npmjs.com/about-registry-signatures/
+https://docs.npmjs.com/cli/v11/commands/npm-audit/
+
+OSV advisory service:
+https://google.github.io/osv.dev/
